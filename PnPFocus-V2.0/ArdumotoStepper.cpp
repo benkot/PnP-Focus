@@ -47,7 +47,7 @@
  *
  * The sequence of halfstep control signals for 4 control wires is as follows:
  *  Step C0 C1 C2 C3
- *     1  1  0  1  0
+ *     1  1  0  1  0  where 1 = 0v and 0=+Vc
  *     2  0  0  1  0
  *     3  0  1  1  0
  *     4  0  1  0  0
@@ -79,12 +79,12 @@
   *   constructor for four-pin version
   *   Sets which wires should control the motor.
   */
-ArdumotoStepper::ArdumotoStepper(int number_of_steps)
+ArdumotoStepper::ArdumotoStepper()
 {
-    this->step_number = 0;    // which step the motor is on
-    this->direction = 0;      // motor direction
-    this->last_step_time = 0; // time stamp in us of the last step taken
-    this->number_of_steps = number_of_steps; // total number of steps for this motor
+    this->step_number = 0;                    // which step the motor is on
+    this->direction = 0;                      // motor direction
+    this->last_step_time = 0;                 // time stamp in us of the last step taken
+    this->number_of_steps = 8;                // total number of steps for the sequence
 
     // Arduino pins for the motor control connection:
     this->motor_pin_1 = 3;
@@ -105,10 +105,17 @@ ArdumotoStepper::ArdumotoStepper(int number_of_steps)
  * Sets the speed in revs per minute
  *   input whatspeed = motor rpm
  *   output step_delay = usec/step
+ *   
+ *   Change 
+ *   input whatspeed = steps/second
+ *   output step_delay = usec/step
+ *   
+ *   
  */
-void ArdumotoStepper::setSpeed(float whatSpeed)
+void ArdumotoStepper::setSpeed(unsigned short  whatSpeed)
 {
-    this->step_delay = 60L * 1000L * 1000L / (this->number_of_steps * whatSpeed);
+    this -> step_delay = 1L * 1000L * 1000L / whatSpeed;
+    //this->step_delay = 60L * 1000L * 1000L / (this->number_of_steps * whatSpeed);
     //While previous was correct this approach makes more logical sense  
 }
 
@@ -134,12 +141,12 @@ void ArdumotoStepper::setStepMode(unsigned short mode)
 
     if (mode == FULLSTEP)
     {
-        this->number_of_steps = number_of_steps/2;    ///2
+        //this->number_of_steps = 4;    ///2
         step_number = step_number/2;   // need to get sequence close to equivalent step if mode changes
     }
     else
     {
-        this->number_of_steps = number_of_steps*2;    //number of steps per full  doubles for half steps *2
+        //this->number_of_steps = 8;    //number of steps per full  doubles for half steps *2
         step_number = step_number*2;          // need to get sequence close to equivalent step if mode changes     
     }
   }
@@ -199,6 +206,7 @@ void ArdumotoStepper::step(int steps_to_move)
                 }
                 this->step_number--;
             }
+            
             // decrement the steps left:
             steps_left--;
             if (this->stepmode == FULLSTEP)
@@ -215,30 +223,34 @@ void ArdumotoStepper::step(int steps_to_move)
  */
 void ArdumotoStepper::stepMotor(int thisStep)
 {
+  // On the PNP Stick Nano motor shield used inner and out, on Ardumoto Red and Yellow
+  // dir A high 5v = LED A-Red-Outer
+  // dir B High 5V = LED B-Yellow-Inner
+  
   switch (thisStep) {
-    case 0:  // 1010
-      analogWrite(motor_pin_1, 255);
-      digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, 255);
-      digitalWrite(motor_dir_2, LOW);
-    break;
-    case 1:  // 0110
+    case 0: //Unipolar sink enable 0110  voltage state 1001     LED B-RO  |A-RO   28BYJ48-step 2
       analogWrite(motor_pin_1, 255);
       digitalWrite(motor_dir_1, HIGH);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, LOW);
     break;
-    case 2:  //0101
+    case 1: //Unipolar sink enable 1010   voltage state 0101     LED B-YI  |A-RO    28BYJ48-step 4
       analogWrite(motor_pin_1, 255);
       digitalWrite(motor_dir_1, HIGH);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
     break;
-    case 3:  //1001
+    case 2: // Unipolar sink enable 1001   voltage state 0110    LED B-YI  |A-YI    28BYJ48-step 6
       analogWrite(motor_pin_1, 255);
       digitalWrite(motor_dir_1, LOW);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 3:  //Unipolar sink enable 0101   voltage state 1010  LED B-RO  |A-YI   28BYJ48-step 8
+      analogWrite(motor_pin_1, 255);
+      digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, LOW);
     break;
   }
 }
@@ -246,53 +258,58 @@ void ArdumotoStepper::stepMotor(int thisStep)
 
 void ArdumotoStepper::halfstepMotor(int thisStep)
 {
+  // On the PNP Stick Nano motor shield used inner and out, on Ardumoto Red and Yellow
+  // dir A high 5v = LED A-Red-Outer
+  // dir B High 5V = LED B-Yellow-Inner
+  
   switch (thisStep) {
-    case 0:    // 1010
-      analogWrite(motor_pin_1, 255);
-      digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, 255);
-      digitalWrite(motor_dir_2, LOW);
-    break;
-    case 1:    // 0010
+
+    case 0: //Unipolar sink enable 0100  voltage state 1000  Lead sink     LED B-RO  |A-OFF   28BYJ48-step 1
       analogWrite(motor_pin_1, 0);
-      digitalWrite(motor_dir_1, LOW);
+      //digitalWrite(motor_dir_1, LOW);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, LOW);
     break;
-    case 2:    // 0110
+    case 1: //Unipolar sink enable 0110  voltage state 1001     LED B-RO  |A-RO   28BYJ48-step 2
       analogWrite(motor_pin_1, 255);
       digitalWrite(motor_dir_1, HIGH);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, LOW);
     break;
-    case 3:    // 0100
+    case 2: //Unipolar sink enable 0010  voltage state 0001     LED B-OFF  |A-RO    28BYJ48-step 3
       analogWrite(motor_pin_1, 255);
-      digitalWrite(motor_dir_1, LOW);
+      digitalWrite(motor_dir_1, HIGH);
       analogWrite(motor_pin_2, 0);
-      digitalWrite(motor_dir_2, LOW);
+      //digitalWrite(motor_dir_2, LOW);
     break;
-    case 4:    //0101
+    case 3: //Unipolar sink enable 1010   voltage state 0101     LED B-YI  |A-RO    28BYJ48-step 4
       analogWrite(motor_pin_1, 255);
       digitalWrite(motor_dir_1, HIGH);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
     break;
-    case 5:    //0001
+    case 4: //Unipolar sink enable 1000   voltage state 0100     LED B-YI  |A-OFF    28BYJ48-step 5
       analogWrite(motor_pin_1, 0);
-      digitalWrite(motor_dir_1, LOW);
+      //digitalWrite(motor_dir_1, LOW);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
     break;
-    case 6:    //1001
+    case 5: // Unipolar sink enable 1001   voltage state 0110    LED B-YI  |A-YI    28BYJ48-step 6
       analogWrite(motor_pin_1, 255);
       digitalWrite(motor_dir_1, LOW);
       analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, HIGH);
     break;
-    case 7:    //1000
+    case 6:  //  Unipolar sink enable 0001   voltage state 0010  LED B-OFF  |A-YI    28BYJ48-step 7
+      analogWrite(motor_pin_1, 0);
+      //digitalWrite(motor_dir_1, LOW);
+      analogWrite(motor_pin_2, 255);
+      digitalWrite(motor_dir_2, HIGH);
+    break;
+    case 7:  //Unipolar sink enable 0101   voltage state 1010  LED B-RO  |A-YI   28BYJ48-step 8
       analogWrite(motor_pin_1, 255);
       digitalWrite(motor_dir_1, LOW);
-      analogWrite(motor_pin_2, 0);
+      analogWrite(motor_pin_2, 255);
       digitalWrite(motor_dir_2, LOW);
     break;
   } 

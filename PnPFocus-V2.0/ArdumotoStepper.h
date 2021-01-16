@@ -82,10 +82,10 @@
 class ArdumotoStepper {
 public:
     // constructors:
-    ArdumotoStepper(int number_of_steps);
+    ArdumotoStepper();
 
     // speed setter method:
-    void setSpeed(float whatSpeed);
+    void setSpeed(unsigned short whatSpeed);
 
     // report Step Speed
     short getStepSpeed();
@@ -110,7 +110,7 @@ private:
 
     int direction;            // Direction of rotation
     unsigned long step_delay; // delay between steps, in ms, based on speed
-    int number_of_steps;      // total number of steps this motor can take
+    int number_of_steps;      // number of steps this motor can take before repeat cycle
     int step_number;          // which step the motor is on
     int stepmode;             // FULLSTEP or HALFSTEP
 

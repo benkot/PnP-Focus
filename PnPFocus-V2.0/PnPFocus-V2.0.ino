@@ -1,12 +1,15 @@
-// Moonlite-compatible stepper controller
+//  PnP-Focus Controller
+// 
+//  Moonlite-compatible stepper controller
 //
-// Original code by orly.andico@gmail.com, 13 April 2014
-// Modified by Anat Ruangrassamee (aruangra@yahoo.com), 26 September 2017
-// Modified V2.0 by Todd Benko (Dtdastro@gmail.com), 01 November, 2020
-
+//  Original code by orly.andico@gmail.com, 13 April 2014
+//  Modified by Anat Ruangrassamee (aruangra@yahoo.com), 26 September 2017
+//  Modified V2.0 by Todd Benko (Dtdastro@gmail.com), 01 November, 2020
+//  Modified V2.0.1 by Todd Benko, 14 January 2021  - remove need for steps per revolution and ardumoto library now speed based using steps/s, 
+//                  fix pause that was occuring at 30 second run, re-order half step based on 28BYJ-48 motor table
+//
 //*****************************************************************************************************************************************************************
-//  User configurations
-//  Set to identify what options are installed in the build you will program
+//  USER NOTIFICATION
 //  
 //  Ardumoto board can be purchased with different pin assignments 
 //  The standard for this programs uses
@@ -32,44 +35,48 @@
 //  which serial port connected in Tools-Port selection
 //  
 //  The following are usable definitions which can be changed to match your specific devices and assembly configuration
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// USER CONFIGURATION AREA
+// Set the following program variable states and code lines specific to your build and choice of operation.
 
-//Require a definition stepsPerRevolution which matches your stepper motor.  
-const int stepsPerRevolution = 3600;    // change this to fit the number of steps per revolution for your motor
-//  Moonlite focus stepper LSG35012F76P = 3600 full steps/revolution 
-//  Nema17 with gearhead 27:1 number 17HS13-0404S-PG27 = 5373 full steps/revolution
-// 64:1 geared 28BYJ-48 = 2038 Full steps / revolution
-
-
-// LCD1602Shield settings
-// if the LCD1602 display shield is installed following line should be #define LCD1602Shield , if not installed it should be //#define LCD1602Shield 
-// this is literally the only difference between leonardo and micro use.  LCD1602 shield remains optionional for Leonardo standalone build. 
-//#define LCD1602Shield   
-
-// LCD1602 starting brightness at powerup
-const short userStartBrightness = 100;                  // Change value to personal choice for startup brightnes 0=off 10= dim 200= bright  value range is 0 to 255
+// Enable Half step mode
+const bool enableHalfStepMode =  true;                // If stepper motor stalls/studders in half step mode, can disable half step mode so only full step is selected.
+                                                      // true = half and full step modes available, 
+                                                      // false = only full step mode is enabled.
 
 // Backlash Compensation: Many geared focus motors have backlash in the gears when changing direction.  The motor shaft must turn x number of steps before the output shaft will turn.
 // The way around the backlash problem is to always approach the target focus position from the same direction.  Backlash compensation is applied to focus movements that extend the 
 // focuser position. The backlash compensation only apply to ASCOM driver target position changes.   When the focuser is racked outward the focus position will overshoot the 
 // target position  by the backlashValue amount and then be racked back in to the target position.  This approach provide constant approach to the focus position and 
 // removes the backlash in the gears and removes gravitational effects on position change.  
+const unsigned short backlashValue=0;                 // increase this value to have a positive overshoot and rack back in to compensate for focuser backlash. 
+                                                      // zero implies no backlash, value of 10 will rack out  10 additonal steps and the 10 steps 
+                                                      // inward to finish at the target position.
 
-const unsigned short backlashValue=20;                 // increase this value to have a positive overshoot and rack back in to compensate for focuser backlash. 
-                                                       // zero implies no backlash, value of 10 will rack out  10 additonal steps and the 10 steps 
-                                                       // inward to finish at the target position.
-// Temperature Units:
+// Temperature reporting values in which format  default is Celcius
 const bool displayFahrenheit = false;                  // false =  temperatures in Celsius., true = temperatures in Fahrenheit.
 
-// Enable Half step mode
-const bool enableHalfStepMode =  true;                // If stepper motor stalls/studders in half step mode, can disable half step mode so only full step is selected.
-                                                      // true = half and full step modes available, false = only full step mode is enabled.
 
-///////////////////////////////////////////////////////// 
-//   End of User configuration
+// LCD1602Shield settings 
+// if the LCD1602 display shield is installed following line should be #define LCD1602Shield , if not installed it should be //#define LCD1602Shield 
+// For Leonardo standalone build with LCD1602 shield installed, the following line needs to be #define LCD1602Shield
+// For Leonardo standalone build with LCD1602 shield NOT installed, the following line needs to be //#define LCD1602Shield
+// For PNP-focus Stick next line needs to be //#define LCD1602Shield 
+//#define LCD1602Shield   
+
+// LCD1602 starting brightness at powerup for StandAlone unit
+const short userStartBrightness = 100;                  // for standalone unit Change value to personal choice for startup brightnes 0=off 10= dim 200= bright  value range is 0 to 255
+
+
+
+////////////////////////////////////////////////// 
+//   END OF USER CONFIGURATION AREA
 //   Do not change anything beyond this point 
 //   unless you wish to embark on Arduino programming 
-//******************************************************************************************************************************************************************************
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Programming note:  Following are code block examples which are used to apply code to be compiled if LCD shield is are installed
 #ifdef LCD1602Shield  
@@ -107,17 +114,12 @@ int               tempInitiated = 0;              // Temperature request initiat
 ///////////////////////////
 Moonlite SerialProtocol;
 
-///////////////////////////
-// Stepper
-///////////////////////////
 
-ArdumotoStepper myStepper(stepsPerRevolution);    //declare Ardumoto call
 
 ///////////////////////////
 // Motor Control Signals
 ///////////////////////////
 int               isRunning = 0;                  // variable to manage if ASCOM move loop is running
-float             motorSpeed = 1;                 // stepper speed in rpm (displaySpeed * 60)/stepsPerRevolution 
 unsigned short    stepSpeed = 2;                  // display speed holder in steps/sec
 unsigned short    stepSpeedCommand=16;            // Ascom command speed holder in steps/sec
 long              distanceToGo = 0;               // focuser commanded position
@@ -129,6 +131,12 @@ unsigned short    backlashState=0;                // backlash state controller 0
 bool              motorActive=false;              // track if motor drive output is active
 bool              ascomFullStep=true;             // used to keep track of ascom commanded step mode.  Always start with full mode
 bool              ascomModeSet=false;             // if ascom sets mode, manual buttons can not change
+
+///////////////////////////
+// Stepper
+///////////////////////////
+
+ArdumotoStepper myStepper;                      //declare Ardumoto Stepper to MyStepper
 
 ///////////////////////////
 // Timer
@@ -427,19 +435,30 @@ void setBrightness (short bright)
 
 //////////////////////////////////////////////////
 // Temperature request actions to get value 
-// Every 30 seconds initiate the temperature query
+// Every 15 seconds initiate the temperature query
 // Once conversion is completed, set value to temperature variable
 //////////////////////////////////////////////////
 void temperature_action ()                              
-{ // This query basically runs in standalone mode when the ascom driver is not connected.  The Ascom Driver will query and reset temperature_millis much sooner than 30 seconds.
-  if ((millis() - temperature_millis) > 28000)
+{ // This query basically runs in standalone mode when the ascom driver is not connected.  The Ascom Driver will query and reset temperature_millis much sooner than 15 seconds.
+  if ((millis() - temperature_millis) > 13000)
   {   //request the temperatures
       sensors.requestTemperatures();                    // need to send a request to query the sensor buss
+          /* // used for troubleshooting
+          #ifdef LCD1602Shield  
+          displayText (11, 0, "T-Req", 0);       // remove TP and Display the topline on the display
+          #endif  // LCD1602Shield
+          */
+      
   }
 
-  if ((millis() - temperature_millis) > 30000) 
+  if ((millis() - temperature_millis) > 15000) 
   {//Update temperature variable every 30 seconds 
         readTemp();   
+          /*// used for troubleshooting
+          #ifdef LCD1602Shield  
+          displayText (11, 0, "T-Read", 0);       // remove TP and Display the topline on the display
+          #endif  // LCD1602Shield
+          */
   }
 }
 
@@ -490,18 +509,6 @@ long EEPROMReadlong(long address)
       //Return the recomposed long by using bitshift.
       return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
       }
-
-///////////////////////////////////////////////////
-//  Calculate the motor speed(rpm) based on requestes
-//  step speed and the stepper motor steps/revolution 
-///////////////////////////////////////////////////
-float calcMotorSpeed(unsigned short step_speed, int maxSteps)  // return motorSpeed in RPM
-{ // step_speed is steps/sec
-  float motor_speed;
-  if (step_speed <1 ) step_speed = 1;               // make sures speed is positive and never 0
-  motor_speed = (float)step_speed *60/maxSteps;     // Note arduino calculation default is int so have to tell it to do a float calculation
-  return (motor_speed);
-}
 
 
 
@@ -798,7 +805,7 @@ void processCommand()
           stepSpeedCommand=32;
           break;
         case 0x20:  // 16 Steps/sec
-          stepSpeedCommand=16;
+          stepSpeedCommand=1; //16
           break;
       }
       break;
@@ -877,7 +884,7 @@ void moveToTarget ()
   if (runningInitialized == 0)
   {
           runningStartPosition = currentPosition;                     // set start of move to target to control starting speed.
-          /*
+          
           if (ascomFullStep && myStepper.getStepMode()!= FULLSTEP )
           {
             changeStepMode(FULLSTEP);
@@ -886,7 +893,7 @@ void moveToTarget ()
           {
             changeStepMode(HALFSTEP);
           }
-          */
+          
           if ( (targetPosition - currentPosition) > 5  && backlashValue!=0 )  // using 5 steps as the threshold to apply backlash compensation.
                                                                               // Temperature outward moves should not invoke backlash compensation adjustment
           {
@@ -905,17 +912,17 @@ void moveToTarget ()
     case 0:
       // No backlash compensation
       distanceToGo =  targetPosition - currentPosition;
-      runningSpeedChange( runningStartPosition,currentPosition, distanceToGo); 
+      runningSpeedChange( runningStartPosition,currentPosition, distanceToGo, stepSpeedCommand); 
       break;
     case 1:
       // backlash compensation rackout
        distanceToGo = targetPosition + (ascomFullStep? backlashValue:backlashValue*2) - currentPosition;
-       runningSpeedChange( runningStartPosition,currentPosition, distanceToGo); 
+       runningSpeedChange( runningStartPosition,currentPosition, distanceToGo,stepSpeedCommand); 
       break;
     case 2:
       // backlash rack out has been reached now perform rack in
       distanceToGo = targetPosition - currentPosition;
-      runningSpeedChange( runningStartPosition,currentPosition, distanceToGo); 
+      runningSpeedChange( runningStartPosition,currentPosition, distanceToGo,stepSpeedCommand); 
       break;
   }
   
@@ -1022,57 +1029,22 @@ void changeStepMode (short mode)
 //  Changes speed commands to ensure soft start and setting speeds to enable ramped speed changes
 //  input start position(sp), current position(cp), end position(ep)
 //////////////////////////////////////////////////////
-void runningSpeedChange(long sp, long cp, long dist)
+void runningSpeedChange(long sp, long cp, long dist, unsigned short commandSpeed)
 { short start ;                  // for evaluating distance from start or end  
   // softStart speed change
   start = abs(cp-sp);
-  if (start <200)
+  if (start <250)
   { 
-    switch (start)
-    {
-      case 0:
-        setFocusStepSpeed(5);             //start with 5 steps/sec
-        break;
-      case 5:
-        setFocusStepSpeed(16);             //start with 16 steps/sec
-        break;
-      case 20:
-        if(stepSpeedCommand > 30) setFocusStepSpeed(32);
-        break;
-      case 50:
-        if(stepSpeedCommand > 60) setFocusStepSpeed(63);
-        break;
-      case 100:
-        if(stepSpeedCommand > 100) setFocusStepSpeed(125);
-        break;  
-      case 195:
-        setFocusStepSpeed(stepSpeedCommand);
-        break;          
-    break;  
-    }
+    if (start < commandSpeed)
+      {setFocusStepSpeed(start+1);             //start with steps/sec
+      }
   }
   // settling speed change
-  if (abs(dist) < 200)
+  if (abs(dist) < 250)
   {
-    switch (abs(dist))
-    {
-      case 10:
-        setFocusStepSpeed(5);  
-        break;
-      case 30:
-        setFocusStepSpeed(16);
-        break;
-      case 60:
-        if(stepSpeedCommand > 30) setFocusStepSpeed(32);
-        break; 
-      case 120:
-        if(stepSpeedCommand > 60) setFocusStepSpeed(63);
-        break;       
-      case 199:
-        if(stepSpeedCommand > 100) setFocusStepSpeed(125);
-        break; 
-     break;  
-    }
+      if (abs(dist) < commandSpeed)
+      {setFocusStepSpeed(abs(dist)+1);             //start with steps/sec
+      }
   }
 }
 
@@ -1084,7 +1056,7 @@ void runningSpeedChange(long sp, long cp, long dist)
 //////////////////////////////////////////////////////
 void setFocusStepSpeed(unsigned short stepSpeed)
 {
-  myStepper.setSpeed (calcMotorSpeed(stepSpeed,stepsPerRevolution));   
+  myStepper.setSpeed (stepSpeed);   
   #ifdef LCD1602Shield                                        // Compile and perform following code if LCD Shield installed
      displayText(8,0," @" + String(stepSpeed) + "S/s ",0);    // Turn on the motor active display tag
   #endif  // LCD1602Shield
@@ -1120,7 +1092,6 @@ void setup()
      lcd.begin(16, 2);                                         // start the LCD library
      setBrightness (userStartBrightness);                      // start with user selected brightness at top of code
      displayText (0, 0, topline, 0);
-     displayText (8,0,("S/R:"+String(stepsPerRevolution)),2000);
      displayPosition();
      buttonPressMillis=millis();                               // start timer for motor turn disable
   #endif  // LCD1602Shield
@@ -1132,7 +1103,7 @@ void setup()
 
 void loop()
 {
-    temperature_action ();                    // perform temperature action if required
+   
     #ifdef LCD1602Shield                      // Compile and perform following code if LCD Shield installed
       //displayText (0, 0, String(millis()), 0);            // only used for troubleshooting to see if programs is halted
       lcd_key = read_LCD_buttons();           // read the buttons
@@ -1141,6 +1112,7 @@ void loop()
     if (isRunning) {                          // perform target moves if required
       moveToTarget();
     }else {
+      temperature_action ();                    // perform temperature action if required  ensure temperature action is not performed during a move otherwise it stops the move on long moves
       if (runningInitialized !=0) runningInitialized = 0;     // Reset runningInitialized if the case of an abort;
     }
     motorIdleActions((millis() - lastMotorRunMillis));
