@@ -6,7 +6,8 @@
 //  Modified by Anat Ruangrassamee (aruangra@yahoo.com), 26 September 2017
 //  Modified V2.0 by Todd Benko (Dtdastro@gmail.com), 01 November, 2020
 //  Modified V2.0.1 by Todd Benko, 14 January 2021  - remove need for steps per revolution and ardumoto library now speed based using steps/s, 
-//                  fix pause that was occuring at 30 second run, re-order half step based on 28BYJ-48 motor table
+//                  fix pause that was occuring at 30 second run, re-order half step based on 28BYJ-48 motor table, change step speed change to ramp speed change
+//  Modified V2.0.2 by Todd Benko 16 January 2021 - Fix no acceleration on steps < 250
 //
 //*****************************************************************************************************************************************************************
 //  USER NOTIFICATION
@@ -1027,24 +1028,26 @@ void changeStepMode (short mode)
 //////////////////////////////////////////////////////
 //  runningSpeedChange
 //  Changes speed commands to ensure soft start and setting speeds to enable ramped speed changes
-//  input start position(sp), current position(cp), end position(ep)
+//  input start position, current position, distance to go
 //////////////////////////////////////////////////////
-void runningSpeedChange(long sp, long cp, long dist, unsigned short commandSpeed)
-{ short start ;                  // for evaluating distance from start or end  
-  // softStart speed change
-  start = abs(cp-sp);
-  if (start <250)
+void runningSpeedChange(long startPosition, long currentPosition, long distanceTogo, unsigned short commandSpeed)
+{ short stepSinceStart ;                  // for evaluating distance from start or end  
+  short startSpeed = 4;                   // starting and ending speed 
+  stepSinceStart = abs(currentPosition-startPosition);
+  distanceTogo = abs(distanceTogo);
+  
+  if ((stepSinceStart <(250-startSpeed))|| (distanceTogo < (250-startSpeed)))  // first test if current position is within total possible ramp range
   { 
-    if (start < commandSpeed)
-      {setFocusStepSpeed(start+1);             //start with steps/sec
+    if (stepSinceStart < (commandSpeed-startSpeed)|| distanceTogo< (commandSpeed-startSpeed))  // Now either step or distance is within ramp and below command speed.  Need to increase or decrease speed.
+    {
+     if (stepSinceStart < distanceTogo)
+      {  
+        setFocusStepSpeed(stepSinceStart+startSpeed);             //true = accel
+      }else
+      {
+        setFocusStepSpeed(distanceTogo+startSpeed);               //false = deacel
       }
-  }
-  // settling speed change
-  if (abs(dist) < 250)
-  {
-      if (abs(dist) < commandSpeed)
-      {setFocusStepSpeed(abs(dist)+1);             //start with steps/sec
-      }
+    }
   }
 }
 
